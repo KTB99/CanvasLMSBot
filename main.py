@@ -14,8 +14,8 @@ load_dotenv()
 
 # Secure API key retrieval
 API_URL = "https://canvas.rowan.edu"
-API_KEY = os.getenv("CANVAS_API_KEY")  # Canvas API key (loaded securely)
-DISCORD_TOKEN = os.getenv("DISCORD_BOT_TOKEN")  # Discord bot token (loaded securely)
+API_KEY = os.getenv("API_KEY")  # Canvas API key (loaded securely)
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")  # Discord bot token (loaded securely)
 
 # Check if API keys are set properly
 if not API_KEY or not DISCORD_TOKEN:
@@ -25,6 +25,9 @@ if not API_KEY or not DISCORD_TOKEN:
 intents = discord.Intents.all()
 intents.message_content = True
 client = discord.Client(intents=intents)
+
+# Keep the bot alive on Replit
+keep_alive()
 
 # Variables to store assignment data
 dates = []
@@ -178,8 +181,6 @@ async def on_message(message):
             except:
                 await user.send("❌ That user login is incorrect, please try again!")
 
-# Keep bot alive on Replit
-keep_alive()
 
 # Run bot securely
 client.run(DISCORD_TOKEN)
