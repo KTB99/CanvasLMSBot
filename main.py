@@ -1,7 +1,7 @@
 from canvasapi import Canvas
 import discord, datetime, time, os
 from discord import ButtonStyle
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ui import Button, View, Select
 from keep_alive import keep_alive
 from dotenv import load_dotenv, dotenv_values, set_key
@@ -14,14 +14,8 @@ API_URL = "https://canvas.rowan.edu"
 
 load_dotenv()
 
-#course = user.get_courses(enrollment_state='active')
-dates = []
-trueDates = []
-courses = []
-pivots = []
-assign = []
-testlist = []
-newline = 0
+canvas = None
+ce = True
 
 #Sets the variable for the total number of users to the value stored in the env file, as a way of indexing the users that register
 if (str(dotenv_values(".env")).find("TOTAL_USERS") != -1):
@@ -29,27 +23,34 @@ if (str(dotenv_values(".env")).find("TOTAL_USERS") != -1):
 else:
     totalUsers = 0
 
-#Saving the commented code below for later implementation 
-
-#for i in range(4):
-    #testlist.append(discord.SelectOption(label=str(i), value="test Option " + str(i), description=None, default=False))
-
-#Loop for adding the assignments from each course into an array,
-#Alongside their due dates.
-#Also using "newline" to determine when to split into the next course
-#for c in course:
-    #pivots.append(newline)
-    #courses.append(c)
-    #for o in c.get_assignments():
-        #assign.append(o)
-        #newline += 1
-        #dates.append(o.due_at)
-
-#Loop for converting the dates of each assignment into proper time format.
-#for d in dates:
-    #if (d != None):
-        #truetime = datetime.datetime.strptime(d, '%Y-%m-%dT%H:%M:%SZ')
-        #trueDates.append(truetime.strftime("%c"))
+#Method used for checking the dates of each students courses
+def check_dues(i):
+    global newline
+    send = ""
+    #Connects to the current user that the loop is on, denoted by i, and accesses their canvas courses using the information they gave during registration
+    canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(i)]))
+    unhold = str(dotenv_values()['USER_' + str(i)])
+    ushold = canvas.get_user(unhold[0: len(unhold) - len(str(totalUsers))], 'sis_login_id')
+    course = ushold.get_courses(enrollment_state='active')
+    #Then loops through each course
+    for c in course:
+        #And then loops through each courses assignments
+        for o in c.get_assignments():
+            if (o.due_at != None):
+                #Calculates the time in hours before the assignment's due date, and the time in days as well for formatting
+                timern = datetime.datetime.now()
+                truetime = datetime.datetime.strptime(o.due_at, '%Y-%m-%dT%H:%M:%SZ')
+                sendtime = str(truetime.strftime('%A')) + ", " + str(truetime.strftime('%b')) + " " + str(truetime.strftime('%d'))
+                calc = truetime - timern
+                hours = calc.total_seconds() // 3600
+                days = int(hours // 24)
+                #Then, if the hours before the due date is greater than 0 (meaning it doesnt count past due assignments) and lower than the target number of hours (48 as default)
+                if (hours > 0 and hours < 48):
+                    #Then, it creates a variable that checks the state of the current student's submission of this assignment, and if it's unsbmitted, add the assignment and its due date to the dm
+                    sub = o.get_submission(ushold.id).workflow_state
+                    if (sub == "unsubmitted"):
+                        send += str(o)[0: str(o).find("(")] + ": Due in " + str(days) + " days on " + sendtime + " at " + str(truetime.strftime('%I'))[1:] + " " + str(truetime.strftime('%p')) + "\n"
+    return send
 
 #Class for tutorialbutton
 class TutorialButton(discord.ui.View):
@@ -97,39 +98,56 @@ class TutorialButton(discord.ui.View):
 @client.event
 async def on_ready():
     print(f'Signed on as {client.user}')
- 
+    remind_check.start()
+
+#Method for checking each user that is registered for the bot
+@tasks.loop(hours = 12)
+async def remind_check():
+    for i in range(totalUsers):
+        #Goes through the number of users in the register list, and uses that number, i, to access the information of that current user (So the first person to register is under 'USER_0', the second is 'USER_1', and so on)
+        #It checks to see if that specific user signed up to be reminded for their classes via the 'REMIND' variable stored in the env file
+        torf = str(dotenv_values()['REMIND_' + str(i)]) == str(1)
+        #If they are signed up (The variable torf checks to see if the value in the REMIND variable is 1 or not), then access the user's information through canvas using the values in the env, and send the user the list of their upcoming assignments in dms
+        if (torf):
+            name = str(dotenv_values()['LOGIN_' + str(i)])
+            user = await client.fetch_user(name)
+            await client.create_dm(user)
+            holdsend = check_dues(i)
+            if (holdsend != ""):
+                await user.send(check_dues(i))
     
 #Event for commands, where you can define multiple commands,
 @client.event
 #by defining an "on_message" method.
 async def on_message(message):
+    global totalUsers
     dm = ""
     cc = 0
     #If statement for a specifc command, this one being for the reminder
     if (message.content.startswith('$Remindme')):
-        #Bot grabs the discord id of the user who sent the message, and creates
-        #a dm with them.
+        #Bot grabs the discord id of the user who sent the message
         user = await client.fetch_user(message.author.id)
-        await client.create_dm(user)
-        #Then, it loops through each assignement of a course, and adds the due
-        #dates and assignment names into a message for each course
-        for i in range(len(trueDates) + len(courses)):
-            #And once it reaches the next course, send a dm which has all of the
-            #previous course's assignments
-            if i in pivots:
-                if (i != 0):
-                    await user.send(dm)
-                    dm = ""
-                dm += "For " + str(courses[cc]) + "\n"
-                cc += 1
-            elif (i < len(trueDates)):
-                dm += str(assign[i]) + " - Due **" + str(trueDates[i]) + "**\n"
+        #Then checks to see if the user is in the list of registered users. If they aren't, stop them from running the command
+        if (str(dotenv_values(".env")).find(str(user)) == -1):
+            await message.channel.send("You are not signed up for the bot!")
+        #If they are, creates a dm with them
+        else:
+            #Also creates a variable 'locate' that is used to get the index of the person accessing the bot currently through use of the env
+            #It gets the substring of the entire env's contents that starts where the current user's discord username is, and ending where that value in the env ends
+            locate = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(user)): str(dotenv_values(".env")).find(str(user)) + len(str(user)) + len(str(totalUsers))]
+            #Then, it makes another substring of itself that only includes the last few digits that are included in the value, which is the current user's index
+            #It goes through all of this in order to access that user's rowan login and api key that they provided during their signup in order to access their courses
+            locate = locate[len(locate) - len(str(totalUsers)):]
+            canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values(".env")['KEY_' + locate]))
+            await client.create_dm(user)
+            await user.send("You will be notified of any canvas assignments that are due the next day!")
+            set_key(".env", "REMIND_" + locate, str("1"))
+            
 
     #Code for tutorial command
     if (message.content.startswith('$Tutorial')):
         global test
         global viewer
-        global totalUsers
         apiWorks = False
         loginWorks = False
         #Deletes the $Tutorial message from the user, and creates a new Tutorial button object
@@ -177,7 +195,11 @@ async def on_message(message):
                         await user.send("Logged in! Welcome, " + str(username.name[0:username.name.find(' ')])+ "!")
                         loginWorks = True
                         #Once connected, the env file has the discord username of the person registering to the env file as a way of keeping them saved into the system
-                        set_key(".env", "USER_" + str(totalUsers), str(user))
+                        #Also adds the digits of the user's index onto the end of the USER value, as a way of accessing the index for other commands
+                        set_key(".env", "USER_" + str(totalUsers), str(login.content) + str(totalUsers))
+                        set_key(".env", "LOGIN_" + str(totalUsers), str(message.author.id))
+                        set_key(".env", "KEY_" + str(totalUsers), str(hold))
+                        set_key(".env", "REMIND_" + str(totalUsers), str("0"))
                         set_key(".env", "TOTAL_USERS", str(totalUsers + 1))
                         totalUsers = int(dotenv_values()['TOTAL_USERS'])
                     except:
@@ -186,3 +208,4 @@ async def on_message(message):
 #The use of the keep_alive file is for the server hosting, where the method keeps the bot awake once its online      
 keep_alive()
 client.run(os.getenv("key"))
+ 
