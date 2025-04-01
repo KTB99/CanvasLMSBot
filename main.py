@@ -1,10 +1,12 @@
 from canvasapi import Canvas
+from datetime import timedelta
 import discord, datetime, time, os
 from discord import ButtonStyle
 from discord.ext import commands, tasks
 from discord.ui import Button, View, Select
 from keep_alive import keep_alive
 from dotenv import load_dotenv, dotenv_values, set_key
+from datetime import timedelta
 
 intents = discord.Intents.all()
 intents.message_content = True
@@ -30,26 +32,22 @@ def check_dues(i):
     #Connects to the current user that the loop is on, denoted by i, and accesses their canvas courses using the information they gave during registration
     canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(i)]))
     unhold = str(dotenv_values()['USER_' + str(i)])
-    ushold = canvas.get_user(unhold[0: len(unhold) - len(str(totalUsers))], 'sis_login_id')
+    ushold = canvas.get_user(unhold, 'sis_login_id')
     course = ushold.get_courses(enrollment_state='active')
+    timern = datetime.datetime.now()
     #Then loops through each course
     for c in course:
+        assigns = c.get_assignments(bucket="unsubmitted")
         #And then loops through each courses assignments
-        for o in c.get_assignments():
-            if (o.due_at != None):
+        for o in assigns:
+            if (o.due_at != None and ((datetime.datetime.strptime(o.due_at, '%Y-%m-%dT%H:%M:%SZ') - timern).total_seconds() // 3600 > 0 and (datetime.datetime.strptime(o.due_at, '%Y-%m-%dT%H:%M:%SZ') - timern).total_seconds() // 3600 < 48)):
                 #Calculates the time in hours before the assignment's due date, and the time in days as well for formatting
-                timern = datetime.datetime.now()
-                truetime = datetime.datetime.strptime(o.due_at, '%Y-%m-%dT%H:%M:%SZ')
-                sendtime = str(truetime.strftime('%A')) + ", " + str(truetime.strftime('%b')) + " " + str(truetime.strftime('%d'))
-                calc = truetime - timern
-                hours = calc.total_seconds() // 3600
-                days = int(hours // 24)
+                truetime = datetime.datetime.strptime(o.due_at, '%Y-%m-%dT%H:%M:%SZ') - datetime.timedelta(hours=4)
                 #Then, if the hours before the due date is greater than 0 (meaning it doesnt count past due assignments) and lower than the target number of hours (48 as default)
-                if (hours > 0 and hours < 48):
-                    #Then, it creates a variable that checks the state of the current student's submission of this assignment, and if it's unsbmitted, add the assignment and its due date to the dm
-                    sub = o.get_submission(ushold.id).workflow_state
-                    if (sub == "unsubmitted"):
-                        send += str(o)[0: str(o).find("(")] + ": Due in " + str(days) + " days on " + sendtime + " at " + str(truetime.strftime('%I'))[1:] + " " + str(truetime.strftime('%p')) + "\n"
+                #Then, it creates a variable that checks the state of the current student's submission of this assignment, and if it's unsbmitted, add the assignment and its due date to the dm
+                sendtime = str(truetime.strftime('%A')) + ", " + str(truetime.strftime('%b')) + " " + str(truetime.strftime('%d'))
+                days = int(((datetime.datetime.strptime(o.due_at, '%Y-%m-%dT%H:%M:%SZ') - timern).total_seconds() // 3600) // 24)
+                send += str(o)[0: str(o).find("(")] + ": Due in " + str(days) + " days on " + sendtime + " at " + str(truetime.strftime('%I')) + " " + str(truetime.strftime('%p')) + "\n"
     return send
 
 #Class for tutorialbutton
@@ -101,7 +99,7 @@ async def on_ready():
     remind_check.start()
 
 #Method for checking each user that is registered for the bot
-@tasks.loop(hours = 12)
+@tasks.loop(hours = 24)
 async def remind_check():
     for i in range(totalUsers):
         #Goes through the number of users in the register list, and uses that number, i, to access the information of that current user (So the first person to register is under 'USER_0', the second is 'USER_1', and so on)
@@ -124,28 +122,95 @@ async def on_message(message):
     dm = ""
     cc = 0
     #If statement for a specifc command, this one being for the reminder
-    if (message.content.startswith('$Remindme')):
+    if (message.content.startswith('$Remindme') or message.content.startswith('$remindme')):
         #Bot grabs the discord id of the user who sent the message
         user = await client.fetch_user(message.author.id)
         #Then checks to see if the user is in the list of registered users. If they aren't, stop them from running the command
-        if (str(dotenv_values(".env")).find(str(user)) == -1):
+        if (str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             await message.channel.send("You are not signed up for the bot!")
         #If they are, creates a dm with them
         else:
             #Also creates a variable 'locate' that is used to get the index of the person accessing the bot currently through use of the env
-            #It gets the substring of the entire env's contents that starts where the current user's discord username is, and ending where that value in the env ends
-            locate = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(user)): str(dotenv_values(".env")).find(str(user)) + len(str(user)) + len(str(totalUsers))]
-            #Then, it makes another substring of itself that only includes the last few digits that are included in the value, which is the current user's index
-            #It goes through all of this in order to access that user's rowan login and api key that they provided during their signup in order to access their courses
-            locate = locate[len(locate) - len(str(totalUsers)):]
+            #It gets the substring of the entire env's contents that starts where the current user's discord username is -5 to get the index of the user
+            locate = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
             canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values(".env")['KEY_' + locate]))
             await client.create_dm(user)
             await user.send("You will be notified of any canvas assignments that are due the next day!")
             set_key(".env", "REMIND_" + locate, str("1"))
             
+    #Next for removing yourself from the reminder list
+    if (message.content.startswith('$Removeme') or message.content.startswith('$removeme')):
+        user = await client.fetch_user(message.author.id)
+        if (str(dotenv_values(".env")).find(str(message.author.id)) == -1):
+            await message.channel.send("You are not signed up for the bot!")
 
-    #Code for tutorial command
-    if (message.content.startswith('$Tutorial')):
+        else:
+            locate = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            if (str(dotenv_values()["REMIND_" + locate]) == '0'):
+                await message.channel.send("You are not signed up for reminders!")
+
+            else:
+                await client.create_dm(user)
+                await user.send("You have been removed from the reminder list!")
+                set_key(".env", "REMIND_" + locate, str("0"))
+                
+    #Next for a basic help command that'll dm the user the commands that the bot has
+    if (message.content.startswith('$Help') or message.content.startswith('$help')):
+        userH = await client.fetch_user(message.author.id)
+        dmH = await client.create_dm(userH)
+        await userH.send("**CANVAS BOT COMMANDS**"
+                        + "\n\n**$Connect**: A tutorial for connecting your canvas account to the bot, allowing use of all other commands!"
+                        + "\n\n**$Remindme**: This command with put you on the bot's list of students to DM anytime they have an assignment that is due in 48 hours or less, reminding every 24 hours!"
+                        + "\n\n**$Removeme**: If you ever need to remove yourself from the bot's list of reminders, you can use this command to take yourself off of it!"
+                        + "\n\n**$Calendar**: if you ever want a list of all of your upcoming assignments, you can use this command to get a list of all of them in your dms!")
+
+    #Next for displaying the student's calendar
+    if(message.content.startswith('$Calendar') or message.content.startswith('$calendar')):
+        #Variables for the message that the bot will send the user, alongside a count for the number of characters in the message (since discord has a max message size of 5k characters)
+        calSend = ""
+        calNum = 0
+        #Alongside variables for the message user, a dm with that user, the time right now, the variable we use to find the index of the user that's messaging, the canvas object, the user object, and their courses
+        userDMC = await client.fetch_user(message.author.id)
+        dmC = await client.create_dm(userDMC)
+        if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
+            message.channel.send("You are not signed up for the bot!")
+        else:
+            locateC = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateC)]))
+            userC = canvas.get_user(dotenv_values()['USER_' + str(locateC)], 'sis_login_id')
+            courseC = userC.get_courses(enrollment_state='active')
+            calSend += "**UPCOMING ASSIGNMENTS**\n"
+            #For each course in the user's canvas, add the course's name onto the send message
+            for cC in courseC:
+                yes = False
+                calSend += "**__For " + str(cC.name) + "__**\n"
+                assignsC = cC.get_assignments(bucket="upcoming")
+                #Then loop through each upcoming assignment in the course,
+                for aC in assignsC:
+                    holdtimeC = datetime.datetime.strptime(aC.due_at, '%Y-%m-%dT%H:%M:%SZ')  - datetime.timedelta(hours=4)
+                    truetimeC = int((datetime.datetime.now() - holdtimeC).total_seconds() // 86400)
+                    #and if the number of days is less than 31 (meaning it's a calendar of the student's month of upcoming assignments), then add the name of the assignment and the due date to the send message
+                    if (truetimeC < 31):
+                        yes = True
+                        calSend += "**" + str(aC.name) + "** Due on " + str(holdtimeC.strftime("%A")) + ", " + str(holdtimeC.strftime("%B")) + " " + str(holdtimeC.strftime("%d")) + " at " + str(holdtimeC.strftime("%I")) + ":" + str(holdtimeC.strftime("%M")) + " " + str(holdtimeC.strftime("%p")) + "\n"
+                        calNum = len(calSend)
+                        #Also check to see if the number of characters in the message is above 4750, meaning it's approaching the 5000 character discord limit, then send the message to restart the character limit
+                        if (calNum > 4750):
+                            await userC.send(calSend)
+                            calNum = 0
+                            calSend = ""
+                #USing the 'yes' bool, we can check to see if any assignments got found for each course, and if not, add a message about that to the send message
+                if (yes == False):
+                    calSend += "You have no upcoming assignments this month!\n\n"
+                #Otherwise, just add a new line to prep for the next course
+                else:
+                    calSend += "\n"
+            #Once everything's been looped through, send the message to the user
+            await userDMC.send(calSend)
+                                
+        
+    #Next for the connection tutorial
+    if (message.content.startswith('$Connect') or message.content.startswith('$connect')):
         global test
         global viewer
         apiWorks = False
@@ -155,7 +220,7 @@ async def on_message(message):
         dm = await client.create_dm(user)
         await message.delete()
         #Checks to see if the username that's currently registering is already in the system via the env file, if they are, stops them from registering again
-        if (str(dotenv_values(".env")).find(str(user)) != -1):
+        if (str(dotenv_values(".env")).find(str(user.id)) != -1):
             apiWorks = True
             loginWorks = True
             await message.channel.send("You have already signed up for the bot!")
@@ -178,7 +243,6 @@ async def on_message(message):
                         apiWorks = True
                     except:
                         await user.send("That API code is incorrect, please try again!")
-            time.sleep(0.75)
             #After the API key has been verified, then ask the user for their rowan username
             rest = await user.send(embed = discord.Embed(
                 title = "User Login",
@@ -195,8 +259,7 @@ async def on_message(message):
                         await user.send("Logged in! Welcome, " + str(username.name[0:username.name.find(' ')])+ "!")
                         loginWorks = True
                         #Once connected, the env file has the discord username of the person registering to the env file as a way of keeping them saved into the system
-                        #Also adds the digits of the user's index onto the end of the USER value, as a way of accessing the index for other commands
-                        set_key(".env", "USER_" + str(totalUsers), str(login.content) + str(totalUsers))
+                        set_key(".env", "USER_" + str(totalUsers), str(login.content))
                         set_key(".env", "LOGIN_" + str(totalUsers), str(message.author.id))
                         set_key(".env", "KEY_" + str(totalUsers), str(hold))
                         set_key(".env", "REMIND_" + str(totalUsers), str("0"))
