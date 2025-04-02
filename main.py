@@ -154,6 +154,7 @@ async def on_message(message):
                 await user.send("You have been removed from the reminder list!")
                 set_key(".env", "REMIND_" + locate, str("0"))
                 
+
     #Next for a basic help command that'll dm the user the commands that the bot has
     if (message.content.startswith('$Help') or message.content.startswith('$help')):
         userH = await client.fetch_user(message.author.id)
@@ -162,7 +163,9 @@ async def on_message(message):
                         + "\n\n**$Connect**: A tutorial for connecting your canvas account to the bot, allowing use of all other commands!"
                         + "\n\n**$Remindme**: This command with put you on the bot's list of students to DM anytime they have an assignment that is due in 48 hours or less, reminding every 24 hours!"
                         + "\n\n**$Removeme**: If you ever need to remove yourself from the bot's list of reminders, you can use this command to take yourself off of it!"
-                        + "\n\n**$Calendar**: if you ever want a list of all of your upcoming assignments, you can use this command to get a list of all of them in your dms!")
+                        + "\n\n**$Calendar**: If you ever want a list of all of your upcoming assignments, you can use this command to get a list of all of them in your dms!"
+                        + "\n\n**$Grades**:   This command allows you to view your grades and graded assignments in a given class!")
+
 
     #Next for displaying the student's calendar
     if(message.content.startswith('$Calendar') or message.content.startswith('$calendar')):
@@ -207,8 +210,48 @@ async def on_message(message):
                     calSend += "\n"
             #Once everything's been looped through, send the message to the user
             await userDMC.send(calSend)
-                                
-        
+
+
+    #Next to display grades in a class of the user's choice
+    if(message.content.startswith('$Grades') or message.content.startswith('$grades')):
+        userDMC = await client.fetch_user(message.author.id)
+        dmC = await client.create_dm(userDMC)
+        if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
+            message.channel.send("You are not signed up for the bot!")
+        else:
+            message1 = ""
+            #Display all courses available, and lets the user select the one they want to see their grades in.
+            message1 += "**Which class would you like to view grades for?**\n**Please select the course ID.**"
+            courseC = userC.get_courses(enrollment_state='active')
+            for cC in courseC:
+                message1 += str(cC.id) + ": " + str(cC.name) + "\n"
+            await userDMC.send(message1)
+            #Create a loop to allow the user to insert the name of a class
+            validCourse = False
+            myCourse = None
+            while (validCourse == False):
+                mess = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 300.0)
+                for cC in courseC:
+                    if(mess.content == cC.id or mess.content == cC.name): 
+                        validCourse = True
+                        myCourse = cC
+                        acceptMsg = "Displaying grades for " + cC.id + "."
+                        await user.send()
+                        break
+                if(not validCourse):
+                    await user.send("Invalid Course ID! Please try again.")
+            message2 = ""
+            assignsC = await myCourse.get_assignments(bucket= not "ungraded")
+            pageCount = 1
+            showingAssignments = True
+            while(showingAssignments):
+                for aC in assignsC:
+                    message2 += aC.name
+            
+            
+
+
+            
     #Next for the connection tutorial
     if (message.content.startswith('$Connect') or message.content.startswith('$connect')):
         global test
