@@ -214,39 +214,41 @@ async def on_message(message):
 
     #Next to display grades in a class of the user's choice
     if(message.content.startswith('$Grades') or message.content.startswith('$grades')):
-        userDMC = await client.fetch_user(message.author.id)
-        dmC = await client.create_dm(userDMC)
+        userDMG = await client.fetch_user(message.author.id)
+        dmG = await client.create_dm(userDMG)
         if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             message.channel.send("You are not signed up for the bot!")
         else:
             message1 = ""
             #Display all courses available, and lets the user select the one they want to see their grades in.
             message1 += "**Which class would you like to view grades for?**\n**Please select the course ID.**"
-            courseC = userC.get_courses(enrollment_state='active')
-            for cC in courseC:
-                message1 += str(cC.id) + ": " + str(cC.name) + "\n"
-            await userDMC.send(message1)
+            locateG = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateG)]))
+            userG = canvas.get_user(dotenv_values()['USER_' + str(locateG)], 'sis_login_id')
+            courseG = userG.get_courses(enrollment_state='active')
+            message1 += "**UPCOMING ASSIGNMENTS**\n"
+            for cG in courseG:
+                message1 += str(cG.id) + ": " + str(cG.name) + "\n"
+            await userDMG.send(message1)
             #Create a loop to allow the user to insert the name of a class
             validCourse = False
-            myCourse = None
             while (validCourse == False):
+                message2 = ""
                 mess = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 300.0)
-                for cC in courseC:
-                    if(mess.content == cC.id or mess.content == cC.name): 
+                myCourse = None
+                for cG in courseG:
+                    if (mess.content == str(cG.id)):
                         validCourse = True
-                        myCourse = cC
-                        acceptMsg = "Displaying grades for " + cC.id + "."
-                        await user.send()
+                        myCourse = cG
                         break
-                if(not validCourse):
-                    await user.send("Invalid Course ID! Please try again.")
-            message2 = ""
-            assignsC = await myCourse.get_assignments(bucket= not "ungraded")
-            pageCount = 1
-            showingAssignments = True
-            while(showingAssignments):
-                for aC in assignsC:
-                    message2 += aC.name
+                if(validCourse):
+                    points = 0
+                    total = 0
+                    assignsG = cG.get_assignments(bucket= "past")
+                    for AG in assignsG:
+                        total += AG.points_possible
+                    message2 = "Current grade in " + str(myCourse.name) + " is : " 
+            await userDMG.send(message2)
             
             
 
