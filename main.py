@@ -257,8 +257,10 @@ async def on_message(message):
                                 earned_ungraded += 0  # Ungraded assignments treated as 0
                     grade_with_ungraded = (earned / total_ungraded) * 100 if total_ungraded > 0 else 0
                     grade_without_ungraded = (earned / total) * 100 if total > 0 else 0
-                    message2 = f"Current grade in {myCourse.name} is: {grade_without_ungraded:.2f}% (currently) or {grade_with_ungraded:.2f}% (including ungraded assignments)\n\n"
-                    await userDMG.send(message2)
+                    message2 = f"Total points earned in {myCourse.name}: {earned} \nTotal points available: {total} \nTotal points including ungraded assignments: {total_ungraded} \nCurrent grade in {myCourse.name} is: {grade_without_ungraded:.2f}% \nGrade including ungraded assignments: {grade_with_ungraded:.2f}%\n\n"
+                else:
+                    message2 = "That course ID is not valid, please try again!\n"
+                await userDMG.send(message2)
             
             
 
