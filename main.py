@@ -221,12 +221,11 @@ async def on_message(message):
         else:
             message1 = ""
             #Display all courses available, and lets the user select the one they want to see their grades in.
-            message1 += "**Which class would you like to view grades for?**\n**Please select the course ID.**"
+            message1 += "**Which class would you like to view grades for?**\n**Please select the course ID.**\n"
             locateG = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
             canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateG)]))
             userG = canvas.get_user(dotenv_values()['USER_' + str(locateG)], 'sis_login_id')
             courseG = userG.get_courses(enrollment_state='active')
-            message1 += "**UPCOMING ASSIGNMENTS**\n"
             for cG in courseG:
                 message1 += str(cG.id) + ": " + str(cG.name) + "\n"
             await userDMG.send(message1)
@@ -241,14 +240,25 @@ async def on_message(message):
                         validCourse = True
                         myCourse = cG
                         break
-                if(validCourse):
-                    points = 0
+                if validCourse:
+                    earned = 0
                     total = 0
-                    assignsG = cG.get_assignments(bucket= "past")
-                    for AG in assignsG:
-                        total += AG.points_possible
-                    message2 = "Current grade in " + str(myCourse.name) + " is : " 
-            await userDMG.send(message2)
+                    earned_ungraded = 0
+                    total_ungraded = 0
+                    assignsG = cG.get_assignments()
+                    for aG in assignsG:
+                        if aG.points_possible:
+                            total_ungraded += aG.points_possible
+                            submission = aG.get_submission(userG.id)  # Fetch the submission for the user
+                            if submission and submission.score is not None:
+                                earned += submission.score
+                                total += aG.points_possible
+                            else:
+                                earned_ungraded += 0  # Ungraded assignments treated as 0
+                    grade_with_ungraded = (earned / total_ungraded) * 100 if total_ungraded > 0 else 0
+                    grade_without_ungraded = (earned / total) * 100 if total > 0 else 0
+                    message2 = f"Current grade in {myCourse.name} is: {grade_without_ungraded:.2f}% (currently) or {grade_with_ungraded:.2f}% (including ungraded assignments)\n\n"
+                    await userDMG.send(message2)
             
             
 
