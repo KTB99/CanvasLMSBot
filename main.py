@@ -241,23 +241,37 @@ async def on_message(message):
                         myCourse = cG
                         break
                 if validCourse:
+                    await userDMG.send("Loading grades...")
                     earned = 0
                     total = 0
                     earned_ungraded = 0
                     total_ungraded = 0
-                    assignsG = cG.get_assignments()
-                    for aG in assignsG:
-                        if aG.points_possible:
-                            total_ungraded += aG.points_possible
-                            submission = aG.get_submission(userG.id)  # Fetch the submission for the user
-                            if submission and submission.score is not None:
-                                earned += submission.score
-                                total += aG.points_possible
-                            else:
-                                earned_ungraded += 0  # Ungraded assignments treated as 0
+                    assignsGroupsG = cG.get_assignment_groups()
+                    allAssignments = cG.get_assignments()
+                    for assignsG in assignsGroupsG:
+                        weight = assignsG.group_weight
+                        if weight != 0:
+                            message2 += f"**Assignment Group: {assignsG.name}**\n"
+                            message2 += f"Weight: {weight}%\n"
+                        groupEarned = 0
+                        groupTotal = 0
+                        groupAssignments = [a for a in allAssignments if a.assignment_group_id == assignsG.id]
+                        for aG in groupAssignments:
+                            if aG.points_possible:
+                                total_ungraded += aG.points_possible
+                                submission = aG.get_submission(userG.id)  
+                                if submission and submission.score is not None:
+                                    groupEarned += submission.score
+                                    earned += submission.score 
+                                    groupTotal += aG.points_possible 
+                                    total += aG.points_possible
+                                else:
+                                    groupTotal += aG.points_possible
+                        if weight != 0:
+                            message2 += f"Points earned in this group: {groupEarned} / {groupTotal} \n"
                     grade_with_ungraded = (earned / total_ungraded) * 100 if total_ungraded > 0 else 0
                     grade_without_ungraded = (earned / total) * 100 if total > 0 else 0
-                    message2 = f"Total points earned in {myCourse.name}: {earned} \nTotal points available: {total} \nTotal points including ungraded assignments: {total_ungraded} \nCurrent grade in {myCourse.name} is: {grade_without_ungraded:.2f}% \nGrade including ungraded assignments: {grade_with_ungraded:.2f}%\n\n"
+                    message2 += f"\n\nTotal points earned in {myCourse.name}: {earned} \nTotal points available: {total} \nTotal points including ungraded assignments: {total_ungraded} \nCurrent grade in {myCourse.name} is: {grade_without_ungraded:.2f}% \nGrade including ungraded assignments: {grade_with_ungraded:.2f}%\n\n"
                 else:
                     message2 = "That course ID is not valid, please try again!\n"
                 await userDMG.send(message2)
