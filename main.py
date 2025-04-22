@@ -154,6 +154,7 @@ async def on_message(message):
                 await user.send("You have been removed from the reminder list!")
                 set_key(".env", "REMIND_" + locate, str("0"))
                 
+
     #Next for a basic help command that'll dm the user the commands that the bot has
     if (message.content.startswith('$Help') or message.content.startswith('$help')):
         userH = await client.fetch_user(message.author.id)
@@ -162,7 +163,9 @@ async def on_message(message):
                         + "\n\n**$Connect**: A tutorial for connecting your canvas account to the bot, allowing use of all other commands!"
                         + "\n\n**$Remindme**: This command with put you on the bot's list of students to DM anytime they have an assignment that is due in 48 hours or less, reminding every 24 hours!"
                         + "\n\n**$Removeme**: If you ever need to remove yourself from the bot's list of reminders, you can use this command to take yourself off of it!"
-                        + "\n\n**$Calendar**: if you ever want a list of all of your upcoming assignments, you can use this command to get a list of all of them in your dms!")
+                        + "\n\n**$Calendar**: If you ever want a list of all of your upcoming assignments, you can use this command to get a list of all of them in your dms!"
+                        + "\n\n**$Grades**:   This command allows you to view your grades and graded assignments in a given class!")
+
 
     #Next for displaying the student's calendar
     if(message.content.startswith('$Calendar') or message.content.startswith('$calendar')):
@@ -207,8 +210,119 @@ async def on_message(message):
                     calSend += "\n"
             #Once everything's been looped through, send the message to the user
             await userDMC.send(calSend)
-                                
-        
+
+
+    #Next to display grades in a class of the user's choice
+    if(message.content.startswith('$Grades') or message.content.startswith('$grades')):
+        userDMG = await client.fetch_user(message.author.id)
+        dmG = await client.create_dm(userDMG)
+        if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
+            message.channel.send("You are not signed up for the bot!")
+        else:
+            message1 = ""
+            #Display all courses available, and lets the user select the one they want to see their grades in.
+            message1 += "**Which class would you like to view grades for?**\n**Please select the course ID.**\n"
+            locateG = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            canvas = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateG)]))
+            userG = canvas.get_user(dotenv_values()['USER_' + str(locateG)], 'sis_login_id')
+            courseG = userG.get_courses(enrollment_state='active')
+            for cG in courseG:
+                message1 += str(cG.id) + ": " + str(cG.name) + "\n"
+            await userDMG.send(message1)
+            #Create a loop to allow the user to insert the name of a class
+            validCourse = False
+            while (validCourse == False):
+                message2 = ""
+                mess = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 300.0)
+                myCourse = None
+                for cG in courseG:
+                    if (mess.content == str(cG.id)):
+                        validCourse = True
+                        myCourse = cG
+                        break
+                if validCourse:
+                    await userDMG.send("Loading grades...")
+                    earned = 0
+                    total = 0
+                    earned_ungraded = 0
+                    total_ungraded = 0
+                    assignsGroupsG = cG.get_assignment_groups()
+                    allAssignments = cG.get_assignments()
+                    for assignsG in assignsGroupsG:
+                        weight = assignsG.group_weight
+                        if weight != 0:
+                            message2 += f"**Assignment Group: {assignsG.name}**\n"
+                            message2 += f"Weight: {weight}%\n"
+                        groupEarned = 0
+                        groupTotal = 0
+                        groupAssignments = [a for a in allAssignments if a.assignment_group_id == assignsG.id]
+                        for aG in groupAssignments:
+                            if aG.points_possible:
+                                total_ungraded += aG.points_possible
+                                submission = aG.get_submission(userG.id)  
+                                if submission and submission.score is not None:
+                                    groupEarned += submission.score
+                                    earned += submission.score 
+                                    groupTotal += aG.points_possible 
+                                    total += aG.points_possible
+                                else:
+                                    groupTotal += aG.points_possible
+                        if weight != 0:
+                            message2 += f"Points earned in this group: {groupEarned} / {groupTotal} \n"
+                    grade_with_ungraded = (earned / total_ungraded) * 100 if total_ungraded > 0 else 0
+                    grade_without_ungraded = (earned / total) * 100 if total > 0 else 0
+                    message2 += f"\n\nTotal points earned in {myCourse.name}: {earned} \nTotal points available: {total} \nTotal points including ungraded assignments: {total_ungraded} \nCurrent grade in {myCourse.name} is: {grade_without_ungraded:.2f}% \nGrade including ungraded assignments: {grade_with_ungraded:.2f}%\n\n"
+                else:
+                    message2 = "That course ID is not valid, please try again!\n"
+                await userDMG.send(message2)
+
+    #Code for the event command for creating a calendar event
+    if (message.content.startswith('$Event') or message.content.startswith('$event')):
+        #With the obvious first step being checking to see if the user is signed up for the bot
+        if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
+                message.channel.send("You are not signed up for the bot!")
+                await message.delete()
+        else:
+            #If they are, create all the variables for the user, canvas, and the courses, alongside the dm
+            inpstr = []
+            locateE = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            canvasE = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateE)]))
+            userE = canvasE.get_user(dotenv_values()['USER_' + str(locateE)], 'sis_login_id')
+            courseE = userE.get_courses(enrollment_state='active')
+            user = await client.fetch_user(message.author.id)
+            dm = await client.create_dm(user)
+            await message.delete()
+            stuff = 0
+            #Then using the 'stuff' variable, we iterate through the three prompts that are needed to create the calendar event
+            while (stuff < 3):
+                if (stuff == 0):
+                    await user.send("Please give a name for your calendar event.")
+                elif (stuff == 1):
+                    await user.send("Please give a decription for your calendar event.")
+                elif (stuff == 2):
+                    await user.send("When do you want this event to be set for, in the format day/month/year (ex. 10/20/2025 for October 20th of 2025)")
+                inp = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 100.0)
+                if (inp.channel.id == dm.id):
+                    inpstr.append(str(inp.content))
+                    stuff += 1
+            #Once all three prompts are filled, try to create a calendar event with the information (after also converting the inputted time to the correct format)
+            try:
+                dateObj = datetime.datetime.strptime(inpstr[2], "%m/%d/%Y")
+                dateObj.strftime("%Y-%m-%d")
+                calendar_event = {
+                    "title": inpstr[0],
+                    "description": inpstr[1],
+                    "start_at": str(dateObj),
+                    "end_at": str(dateObj),
+                    "context_code": "user_" + str(userE.id)
+                        
+                    }
+                calendar_event = canvasE.create_calendar_event(calendar_event)
+                await user.send("Calendar Event successfully created!")
+            except:
+                await user.send("There was an error trying to create your event. Please try again.")
+            
+            
     #Next for the connection tutorial
     if (message.content.startswith('$Connect') or message.content.startswith('$connect')):
         global test
