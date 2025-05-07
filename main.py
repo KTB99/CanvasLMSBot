@@ -229,7 +229,6 @@ async def on_message(message):
     if(message.content.startswith('$Grades') or message.content.startswith('$grades')):
         userDMG = await client.fetch_user(message.author.id)
         dmG = await client.create_dm(userDMG)
-        await message.delete()
         if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             message.channel.send("You are not signed up for the bot!")
         else:
@@ -286,9 +285,46 @@ async def on_message(message):
                     grade_with_ungraded = (earned / total_ungraded) * 100 if total_ungraded > 0 else 0
                     grade_without_ungraded = (earned / total) * 100 if total > 0 else 0
                     message2 += f"\n\nTotal points earned in {myCourse.name}: {earned} \nTotal points available: {total} \nTotal points including ungraded assignments: {total_ungraded} \nCurrent grade in {myCourse.name} is: {grade_without_ungraded:.2f}% \nGrade including ungraded assignments: {grade_with_ungraded:.2f}%\n\n"
+                    await userDMG.send(message2)
+                    await userDMG.send("**Please type \'Display\' to display all assignments in this class with a failing grade(Under 65%), or \'End\' to close the grading script.**")
+                    requestingDisplay = True
+                    while requestingDisplay:
+                        mess2 = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 300.0)
+                        if(mess2.content == "Display"):
+                            await userDMG.send("Loading assignments...")
+                            message3 = "**Assignments with a failing grade:**\n"
+                            requestingDisplay = False
+                            for assignsG in assignsGroupsG:
+                                weight = assignsG.group_weight
+                                asssignGroupString = ""
+                                if weight != 0:
+                                    asssignGroupString += f"**Failed assignments in {assignsG.name}:**\n"
+                                groupAssignments = [a for a in allAssignments if a.assignment_group_id == assignsG.id]
+                                for aG in groupAssignments:
+                                    if aG.points_possible:
+                                        submission = aG.get_submission(userG.id)  
+                                        if submission and submission.score is not None:
+                                            assignmentGrade = submission.score / aG.points_possible
+                                            if assignmentGrade < 0.65:
+                                                asssignGroupString += f"{aG.name}: {submission.score} / {aG.points_possible}, {assignmentGrade * 100}%\n"
+                                if asssignGroupString == f"**Failed assignments in {assignsG.name}:**\n":
+                                    message3 += f"**No failed assignments in {assignsG.name}.**\n"
+                                else:
+                                    message3 += asssignGroupString
+                                message3 += "\n"
+                            await userDMG.send(message3)
+                            break
+                        elif(mess2.content == "End"):
+                            requestingDisplay == False
+                            await userDMG.send("Grading script closed.")
+                            break
+                        else:
+                            await userDMG.send("Invalid input.")
                 else:
                     message2 = "That course ID is not valid, please try again!\n"
-                await userDMG.send(message2)
+                    await userDMG.send(message2)
+            
+            
 
     #Code for the event command for creating a calendar event
     if (message.content.startswith('$Event') or message.content.startswith('$event')):
@@ -558,6 +594,7 @@ async def on_message(message):
             set_key(".env", "REMIND_" + locateR, str("0"))
             await user.send("You have been successfully disconnected from the bot!")
     
+
     #Next for the connection tutorial
     if (message.content.startswith('$Connect') or message.content.startswith('$connect')):
         global test
