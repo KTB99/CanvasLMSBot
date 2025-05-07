@@ -1,12 +1,14 @@
 from canvasapi import Canvas
 from datetime import timedelta
-import discord, datetime, time, os
+import html as html
+import discord, datetime, time, os, requests
 from discord import ButtonStyle
 from discord.ext import commands, tasks
 from discord.ui import Button, View, Select
 from keep_alive import keep_alive
 from dotenv import load_dotenv, dotenv_values, set_key
 from datetime import timedelta
+import html2text
 
 intents = discord.Intents.all()
 intents.message_content = True
@@ -24,6 +26,9 @@ if (str(dotenv_values(".env")).find("TOTAL_USERS") != -1):
     totalUsers = int(dotenv_values()['TOTAL_USERS'])
 else:
     totalUsers = 0
+    
+def to_HTML(text):
+    return html.escape(text)
 
 #Method used for checking the dates of each students courses
 def check_dues(i):
@@ -125,6 +130,7 @@ async def on_message(message):
     if (message.content.startswith('$Remindme') or message.content.startswith('$remindme')):
         #Bot grabs the discord id of the user who sent the message
         user = await client.fetch_user(message.author.id)
+        await message.delete()
         #Then checks to see if the user is in the list of registered users. If they aren't, stop them from running the command
         if (str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             await message.channel.send("You are not signed up for the bot!")
@@ -141,6 +147,7 @@ async def on_message(message):
     #Next for removing yourself from the reminder list
     if (message.content.startswith('$Removeme') or message.content.startswith('$removeme')):
         user = await client.fetch_user(message.author.id)
+        await message.delete()
         if (str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             await message.channel.send("You are not signed up for the bot!")
 
@@ -159,12 +166,17 @@ async def on_message(message):
     if (message.content.startswith('$Help') or message.content.startswith('$help')):
         userH = await client.fetch_user(message.author.id)
         dmH = await client.create_dm(userH)
+        await message.delete()
         await userH.send("**CANVAS BOT COMMANDS**"
                         + "\n\n**$Connect**: A tutorial for connecting your canvas account to the bot, allowing use of all other commands!"
+                        + "\n\n**$Disconnect**: If you are connected to the bot and ever want to remove yourself, simply run this command to do so!"
                         + "\n\n**$Remindme**: This command with put you on the bot's list of students to DM anytime they have an assignment that is due in 48 hours or less, reminding every 24 hours!"
                         + "\n\n**$Removeme**: If you ever need to remove yourself from the bot's list of reminders, you can use this command to take yourself off of it!"
                         + "\n\n**$Calendar**: If you ever want a list of all of your upcoming assignments, you can use this command to get a list of all of them in your dms!"
-                        + "\n\n**$Grades**:   This command allows you to view your grades and graded assignments in a given class!")
+                        + "\n\n**$Event**: This command allows you to create a calendar event in your dms!"
+                        + "\n\n**$Grades**: This command allows you to view your grades and graded assignments in a given class!"
+                        + "\n\n**$Discussion**: This command allows you to view and respond to discussion boards in any of your courses through your dms!"
+                        + "\n\n**$Submit**: This command allows you to submit text, urls, and files to an assignment in any of your courses through your dms!")
 
 
     #Next for displaying the student's calendar
@@ -175,6 +187,7 @@ async def on_message(message):
         #Alongside variables for the message user, a dm with that user, the time right now, the variable we use to find the index of the user that's messaging, the canvas object, the user object, and their courses
         userDMC = await client.fetch_user(message.author.id)
         dmC = await client.create_dm(userDMC)
+        await message.delete()
         if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             message.channel.send("You are not signed up for the bot!")
         else:
@@ -313,8 +326,275 @@ async def on_message(message):
             
             
 
+    #Code for the event command for creating a calendar event
+    if (message.content.startswith('$Event') or message.content.startswith('$event')):
+        #With the obvious first step being checking to see if the user is signed up for the bot
+        if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
+                message.channel.send("You are not signed up for the bot!")
+                await message.delete()
+        else:
+            #If they are, create all the variables for the user, canvas, and the courses, alongside the dm
+            inpstr = []
+            locateE = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            canvasE = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateE)]))
+            userE = canvasE.get_user(dotenv_values()['USER_' + str(locateE)], 'sis_login_id')
+            courseE = userE.get_courses(enrollment_state='active')
+            user = await client.fetch_user(message.author.id)
+            dm = await client.create_dm(user)
+            await message.delete()
+            stuff = 0
+            #Then using the 'stuff' variable, we iterate through the three prompts that are needed to create the calendar event
+            while (stuff < 3):
+                if (stuff == 0):
+                    await user.send("Please give a name for your calendar event.")
+                elif (stuff == 1):
+                    await user.send("Please give a decription for your calendar event.")
+                elif (stuff == 2):
+                    await user.send("When do you want this event to be set for, in the format month/day/year (ex. 10/20/2025 for October 20th of 2025)")
+                inp = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 100.0)
+                if (inp.channel.id == dm.id):
+                    inpstr.append(str(inp.content))
+                    stuff += 1
+            #Once all three prompts are filled, try to create a calendar event with the information (after also converting the inputted time to the correct format)
+            try:
+                dateObj = datetime.datetime.strptime(inpstr[2], "%m/%d/%Y")
+                dateObj.strftime("%Y-%m-%d")
+                calendar_event = {
+                    "title": inpstr[0],
+                    "description": inpstr[1],
+                    "start_at": str(dateObj),
+                    "end_at": str(dateObj),
+                    "context_code": "user_" + str(userE.id)
+                        
+                    }
+                calendar_event = canvasE.create_calendar_event(calendar_event)
+                await user.send("Calendar Event successfully created!")
+            except:
+                await user.send("There was an error trying to create your event. Please try again.")
 
-            
+    #Code for the discussion command for getting and replying to discussions
+    if (message.content.startswith('$Discussion') or message.content.startswith('$discussion')):
+        locateD = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+        canvasD = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateD)]))
+        userD = canvasD.get_user(dotenv_values()['USER_' + str(locateD)], 'sis_login_id')
+        courseD = userD.get_courses(enrollment_state='active')
+        user = await client.fetch_user(message.author.id)
+        dm = await client.create_dm(user)
+        await message.delete()
+        #The classic check to see if the user is signed up to the bot or not
+        if (str(dotenv_values(".env")).find(str(user.id)) == -1):
+            await message.channel.send("You are not signed up for the bot!")
+        
+        else:
+            count = 0
+            discussions = []
+            dId = []
+            #Then builds a message to send to the user that consists of all of the discussions in their courses
+            send = ""
+            for c in courseD:
+                count2 = count
+                discs = c.get_discussion_topics()
+                send += "\n**" + c.name + "**\n"
+                for d in discs:
+                    discussions.append(d)
+                    dId.append(d.id)
+                    count += 1
+                    send += str(count) + ". " + str(d) + "\n"
+                if (count != count2):
+                    send += "\n"
+                else:
+                    send += "None\n"
+            send += "\n\nWhich Discussion would you like to access? (Send the number of the discusion you'd like to access)"
+            await user.send(send)
+            contin = True
+            continU = False
+            #After the message is sent, use a while loop to ask the user which discussion they want to access
+            while(contin):
+                entry = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 60.0)
+                if (entry.channel.id == dm.id):
+                    #Once the user sends a message, use a 'try' block to see if the message they sent is a valid int
+                    try:
+                        #Use that int - 1 to get the correct index of the discussion they want to access, then print the description of the discussion
+                        #Its returned in html form so I had to import an html to text converter to use on it here
+                        html = discussions[int(entry.content) - 1].message
+                        print(html)
+                        htmltext = html2text.html2text(html)
+                        descriptionsend = "**Discussion Description**\n" + str(htmltext) + "\n\nWould you like to reply to this discussion, or return to your list? (Answer with 'reply' or 'return')"
+                        await user.send(descriptionsend)
+                        contin2 = True
+                        #Once the discussion is sent to the user, use a second while loop to see if they want to reply to the discussion or return to the list
+                        while(contin2):
+                            repOrRet = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 120.0)
+                            if (repOrRet.channel.id == dm.id):
+                                #If they choose to reply, it changes a third while loop boolean variable to true and turns this while loop's to false to start the reply while loop
+                                if (str(repOrRet.content).lower() == 'reply'):
+                                    await user.send("What would you like your reply to be?")
+                                    continU = True
+                                    contin2 = False
+                                #If they choose to return to the menu, it sets this while loop variable to false to restart the cycle, and sends the user the menu again
+                                elif (str(repOrRet.content).lower() == 'return'):
+                                    await user.send(send)
+                                    contin2 = False
+                                #If they send anything else, tell them it's not valid, and loop again to give them another chance
+                                else:
+                                    await user.send("That is not a valid input. Try again.")
+                        #Third while loop for the reply that  the user wants to send to the discussion
+                        while(continU):
+                            reply = await client.wait_for("message", check=lambda msg: msg.author == message.author, timeout = 600.0)
+                            if (reply.channel.id == dm.id):
+                                final = discussions[int(entry.content) - 1].post_entry(message=str(reply.content))
+                                await user.send("Your reply has been successfully sent!")
+                                
+                    except:
+                        await user.send("That is not a valid input, try again.")
+                else:
+                    pass
+                
+    #Code for the submit command for submitting assignments
+    if (message.content.startswith('$Submit') or message.content.startswith('$submit')):
+        user = await client.fetch_user(message.author.id)
+        dm = await client.create_dm(user)
+        #The classic check to see if the user is signed up
+        if (str(dotenv_values(".env")).find(str(user.id)) == -1):
+            await message.channel.send("You aren't signed up for the bot!")
+        #If they are, get all of the variables needed for the rest of the command
+        else:
+            await message.delete()
+            locateS = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            canvasS = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateS)]))
+            userS = canvasS.get_user(dotenv_values()['USER_' + str(locateS)], 'sis_login_id')
+            courseS = userS.get_courses(enrollment_state='active')
+            submitDM = "**What assignment would you like to make a submission for?**\n\n"
+            count = 0
+            coursename = False
+            assigns = []
+            sub_types = []
+            inp = -1
+            assignDecide = None
+            typeDecide = None
+            #Loop through the student's courses to find unsubmitted assignments and add them to a list to display it to the user in dms
+            for cS in courseS:
+                coursename = False
+                dS = cS.get_assignments(bucket="unsubmitted")
+                for dis in dS:
+                    if (coursename == False):
+                        submitDM += "**" + str(cS.name) + "**\n"
+                        coursename = True
+                    assigns.append(dis)
+                    submitDM += str(count + 1) + ". " + str(dis.name) + "\n"
+                    count += 1
+                submitDM += "\n"
+            await user.send(submitDM)
+            #After the list is sent to the user, use a first looper variable to ask the user which entry from the list they want to submit an assignment for
+            looper = True
+            while(looper):
+                entryS = await client.wait_for("message", check=lambda msg: msg.author == message.author and isinstance(msg.channel, discord.DMChannel), timeout = 60.0)
+                #The loop only breaks once the user inputs an int that corresponds to one of the entries in the list using a try block
+                try:
+                    inp = int(entryS.content) - 1
+                    looper = False
+                    assignDecide = assigns[inp]
+                except:
+                    await user.send("That is not a valid input. Try again!")
+            #After the first loop breaks, create another message that includes all of the possible submission types for the assignment selected, and send it to the user
+            if (assignDecide != None):
+                submitTypes = "**What type of submission would you like to make to " + str(assignDecide.name) + "?**\n\n"
+                types = assignDecide.submission_types
+                count2 = 0
+                for t in types:
+                    sub_types.append(t)
+                    count2 += 1
+                    if (str(t) == "online_text_entry"):  
+                        submitTypes += str(count2) + ". Text Entry\n"
+                    elif (str(t) == "online_upload"):
+                        submitTypes += str(count2) + ". File Upload\n"
+                    elif (str(t) == "online_url"):
+                        submitTypes += str(count2) + ". URL Upload\n"
+                await user.send(submitTypes)
+            #After the list of posssible submissions is sent, use a second looper variable to get the user's input for what kind of submission they want to send
+            looper2 = True
+            while(looper2):
+                entrySS = await client.wait_for("message", check=lambda msg: msg.author == message.author and isinstance(msg.channel, discord.DMChannel), timeout = 60.0)
+                #Just like the first, it uses a try block to make sure the input works
+                try:
+                    inp2 = int(entrySS.content) - 1
+                    looper2 = False
+                    typeDecide = sub_types[inp2]
+                except:
+                    await user.send("That is not a valid input. Try again!")
+            #After the user inputs what kind of submission they want to do, use a third looper variable and if statements to get the submission type that was entered
+            confirmMsg = "**Are you sure you want to upload "
+            fileU = None
+            if (typeDecide != None):
+                looper3 = True
+                while(looper3):
+                    #For each of the three cases, the user is asked to send the text/file/url that they want to upload, and it is tested to make sure it is valid
+                    if (str(typeDecide) == "online_text_entry"):
+                        await user.send("**Send the text that you would like to submit to " + str(assignDecide.name) + "**")
+                        entryT = await client.wait_for("message", check=lambda msg: msg.author == message.author and isinstance(msg.channel, discord.DMChannel), timeout = 60.0)
+                        confirmMsg += "this text to " + str(assignDecide.name) + "**?\n\n" + str(entryT.content) + "\n\n**(y/n)**"
+                        looper3 = False
+                    elif(str(typeDecide) == "online_upload"):
+                        await user.send("**Upload the file that you would like to submit to " + str(assignDecide.name) + "**")
+                        entryF = await client.wait_for("message", check=lambda msg: msg.author == message.author and isinstance(msg.channel, discord.DMChannel), timeout = 60.0)
+                        if (entryF.attachments == []):
+                            await user.send("There is no file in your message. Try again!")
+                        else:
+                            r = requests.get(entryF.attachments[0].url, allow_redirects=True)
+                            fileU = await entryF.attachments[0].save(entryF.attachments[0].filename)
+                            confirmMsg += "this file to " + str(assignDecide.name) + "**?\n\n" + str(entryF.attachments[0].filename) + "\n\n**(y/n)**"
+                            looper3 = False
+                    elif(str(typeDecide) == "online_url"):
+                        await user.send("**Send the URL that you would like to submit to " + str(assignDecide.name) + "**")
+                        entryL = await client.wait_for("message", check=lambda msg: msg.author == message.author and isinstance(msg.channel, discord.DMChannel), timeout = 60.0)
+                        if ('https' in entryL.content):
+                            confirmMsg += "this link to " + str(assignDecide.name) + "**?\n\n" + str(entryL.content) + "\n\n**(y/n)**"
+                            looper3 = False
+                        else:
+                            await user.send("That is not a valid link. Try again!")
+                #If the submission input is valid, then it sends a confirmation message, asking the user if they are sure that what they sent is what they want to submit using y or n
+                await user.send(confirmMsg)
+                #Using our fourth and final looper to validate the user's input
+                looper4 = True
+                while(looper4):
+                    entryYN = await client.wait_for("message", check=lambda msg: msg.author == message.author and isinstance(msg.channel, discord.DMChannel), timeout = 60.0)
+                    if (str(entryYN.content).lower() == "y"):
+                        if (str(typeDecide) == "online_text_entry"):
+                            safeText = str(entryT.content).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                            htmlText = "<p>" + safeText.replace("\n", "<br>") + "</p>"
+                            assignDecide.submit(submission = {'submission_type': "online_text_entry", "body": htmlText })
+                            await user.send("Submission successfully sent!")
+                            looper4 = False
+                        elif(str(typeDecide) == "online_upload"):
+                            assignDecide.submit(submission = {"submission_type": 'online_upload' },  file = open(entryF.attachments[0].filename))
+                            await user.send("Submission successfully sent!")
+                            looper4 = False
+                        elif(str(typeDecide) == "online_url"):
+                            assignDecide.submit(submission = {"submission_type": 'online_url' ,  "url":  str(entryL.content)})
+                            await user.send("Submission successfully sent!")
+                            looper4 = False
+                    elif(str(entryYN.content).lower() == "n"):
+                        looper4 = False
+                    else:
+                        await user.send("That is not a valid input. Try again!")
+    
+    #Code for the disconnect command to disconnect from the bot
+    if (message.content.startswith('$Disconnect') or message.content.startswith('$disconnect')):
+        user = await client.fetch_user(message.author.id)
+        dm = await client.create_dm(user)
+        await message.delete()
+        if (str(dotenv_values(".env")).find(str(user.id)) == -1):
+            await message.channel.send("You aren't signed up for the bot!")
+
+        else:
+            locateR = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
+            set_key(".env", "USER_" + locateR, 'NULL')
+            set_key(".env", "LOGIN_" + locateR, 'NULL')
+            set_key(".env", "KEY_" + locateR, 'NULL')
+            set_key(".env", "REMIND_" + locateR, str("0"))
+            await user.send("You have been successfully disconnected from the bot!")
+    
+
     #Next for the connection tutorial
     if (message.content.startswith('$Connect') or message.content.startswith('$connect')):
         global test
@@ -373,6 +653,7 @@ async def on_message(message):
                         totalUsers = int(dotenv_values()['TOTAL_USERS'])
                     except:
                         await user.send("That user login is incorrect, please try again!")
+
 
 #The use of the keep_alive file is for the server hosting, where the method keeps the bot awake once its online      
 keep_alive()
