@@ -130,7 +130,8 @@ async def on_message(message):
     if (message.content.startswith('$Remindme') or message.content.startswith('$remindme')):
         #Bot grabs the discord id of the user who sent the message
         user = await client.fetch_user(message.author.id)
-        await message.delete()
+        if isinstance(message.channel, discord.TextChannel):
+            await message.delete()
         #Then checks to see if the user is in the list of registered users. If they aren't, stop them from running the command
         if (str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             await message.channel.send("You are not signed up for the bot!")
@@ -147,7 +148,8 @@ async def on_message(message):
     #Next for removing yourself from the reminder list
     if (message.content.startswith('$Removeme') or message.content.startswith('$removeme')):
         user = await client.fetch_user(message.author.id)
-        await message.delete()
+        if isinstance(message.channel, discord.TextChannel):
+            await message.delete()
         if (str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             await message.channel.send("You are not signed up for the bot!")
 
@@ -166,7 +168,8 @@ async def on_message(message):
     if (message.content.startswith('$Help') or message.content.startswith('$help')):
         userH = await client.fetch_user(message.author.id)
         dmH = await client.create_dm(userH)
-        await message.delete()
+        if isinstance(message.channel, discord.TextChannel):
+            await message.delete()
         await userH.send("**CANVAS BOT COMMANDS**"
                         + "\n\n**$Connect**: A tutorial for connecting your canvas account to the bot, allowing use of all other commands!"
                         + "\n\n**$Disconnect**: If you are connected to the bot and ever want to remove yourself, simply run this command to do so!"
@@ -187,7 +190,8 @@ async def on_message(message):
         #Alongside variables for the message user, a dm with that user, the time right now, the variable we use to find the index of the user that's messaging, the canvas object, the user object, and their courses
         userDMC = await client.fetch_user(message.author.id)
         dmC = await client.create_dm(userDMC)
-        await message.delete()
+        if isinstance(message.channel, discord.TextChannel):
+            await message.delete()
         if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
             message.channel.send("You are not signed up for the bot!")
         else:
@@ -331,7 +335,8 @@ async def on_message(message):
         #With the obvious first step being checking to see if the user is signed up for the bot
         if(str(dotenv_values(".env")).find(str(message.author.id)) == -1):
                 message.channel.send("You are not signed up for the bot!")
-                await message.delete()
+                if isinstance(message.channel, discord.TextChannel):
+                    await message.delete()
         else:
             #If they are, create all the variables for the user, canvas, and the courses, alongside the dm
             inpstr = []
@@ -341,7 +346,8 @@ async def on_message(message):
             courseE = userE.get_courses(enrollment_state='active')
             user = await client.fetch_user(message.author.id)
             dm = await client.create_dm(user)
-            await message.delete()
+            if isinstance(message.channel, discord.TextChannel):
+                await message.delete()
             stuff = 0
             #Then using the 'stuff' variable, we iterate through the three prompts that are needed to create the calendar event
             while (stuff < 3):
@@ -380,7 +386,8 @@ async def on_message(message):
         courseD = userD.get_courses(enrollment_state='active')
         user = await client.fetch_user(message.author.id)
         dm = await client.create_dm(user)
-        await message.delete()
+        if isinstance(message.channel, discord.TextChannel):
+            await message.delete()
         #The classic check to see if the user is signed up to the bot or not
         if (str(dotenv_values(".env")).find(str(user.id)) == -1):
             await message.channel.send("You are not signed up for the bot!")
@@ -459,7 +466,8 @@ async def on_message(message):
             await message.channel.send("You aren't signed up for the bot!")
         #If they are, get all of the variables needed for the rest of the command
         else:
-            await message.delete()
+            if isinstance(message.channel, discord.TextChannel):
+                await message.delete()
             locateS = str(dotenv_values(".env"))[str(dotenv_values(".env")).find(str(message.author.id)) - 5: str(dotenv_values(".env")).find(str(message.author.id)) - 4]
             canvasS = Canvas("https://canvas.rowan.edu", str(dotenv_values()['KEY_' + str(locateS)]))
             userS = canvasS.get_user(dotenv_values()['USER_' + str(locateS)], 'sis_login_id')
@@ -582,7 +590,8 @@ async def on_message(message):
     if (message.content.startswith('$Disconnect') or message.content.startswith('$disconnect')):
         user = await client.fetch_user(message.author.id)
         dm = await client.create_dm(user)
-        await message.delete()
+        if isinstance(message.channel, discord.TextChannel):
+            await message.delete()
         if (str(dotenv_values(".env")).find(str(user.id)) == -1):
             await message.channel.send("You aren't signed up for the bot!")
 
@@ -604,7 +613,8 @@ async def on_message(message):
         #Deletes the $Tutorial message from the user, and creates a new Tutorial button object
         user = await client.fetch_user(message.author.id)
         dm = await client.create_dm(user)
-        await message.delete()
+        if isinstance(message.channel, discord.TextChannel):
+            await message.delete()
         #Checks to see if the username that's currently registering is already in the system via the env file, if they are, stops them from registering again
         if (str(dotenv_values(".env")).find(str(user.id)) != -1):
             apiWorks = True
@@ -657,5 +667,5 @@ async def on_message(message):
 
 #The use of the keep_alive file is for the server hosting, where the method keeps the bot awake once its online      
 keep_alive()
-client.run(os.getenv("key"))
+client.run(os.getenv("DISCORD_BOT_TOKEN"))
  
